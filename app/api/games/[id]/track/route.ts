@@ -1,0 +1,44 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/session";
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const userId = await getCurrentUserId();
+  if (!userId) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+
+  const game = await prisma.game.findUnique({ where: { id: params.id } });
+  if (!game) return NextResponse.json({ error: "Game not found." }, { status: 404 });
+
+  const { favorite, status, progressLabel } = await req.json();
+  const now = new Date();
+  const startingWatch = status === "IN_PROGRESS";
+  const completingNow = status === "COMPLETED";
+
+  try {
+    const entry = await prisma.entry.upsert({
+      where: { userId_gameId: { userId, gameId: game.id } },
+      create: {
+        userId,
+        gameId: game.id,
+        mediaType: "GAME",
+        title: game.name,
+        status: status ?? null,
+        favorite: favorite ?? false,
+        ...(progressLabel !== undefined && { progressLabel }),
+        ...(startingWatch && { startedAt: now }),
+        ...(completingNow && { finishedAt: now }),
+      },
+      update: {
+        ...(status !== undefined && { status }),
+        ...(favorite !== undefined && { favorite }),
+        ...(progressLabel !== undefined && { progressLabel }),
+        ...(startingWatch && { startedAt: now }),
+        ...(completingNow && { finishedAt: now }),
+      },
+    });
+    return NextResponse.json({ ...entry, moviePosterPath: game.coverImageId });
+  } catch (err) {
+    console.error("Failed to upsert entry for game track:", err);
+    return NextResponse.json({ error: "Couldn't save that." }, { status: 500 });
+  }
+}

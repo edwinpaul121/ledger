@@ -1,0 +1,16 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Prisma's engine needs these on alpine
+RUN apk add --no-cache libc6-compat openssl
+
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["sh", "-c", "npm install && npx prisma migrate deploy && (node scripts/catalog-sync.mjs &) && npm run dev"]

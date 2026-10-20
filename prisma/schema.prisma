@@ -1,0 +1,373 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Auth.js required models ----
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // only set for credentials sign-in
+  rowOrder      String? // comma-separated MediaType order, e.g. "FILM,SHOW,GAME,BOOK"
+  createdAt     DateTime  @default(now())
+
+  accounts        Account[]
+  sessions        Session[]
+  entries         Entry[]
+  lists           List[]
+  viewHistory     ViewHistory[]
+  episodeProgress EpisodeProgress[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---- Media tracking (used in a later step; included now so the schema is stable) ----
+
+enum MediaType {
+  FILM
+  SHOW
+  GAME
+  BOOK
+}
+
+enum EntryStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DROPPED
+}
+
+model Entry {
+  id            String       @id @default(cuid())
+  userId        String
+  movieId       String? // set when this entry is linked to a real catalog Movie
+  showId        String? // set when this entry is linked to a real catalog Show
+  gameId        String? // set when this entry is linked to a real catalog Game
+  bookId        String? // set when this entry is linked to a real catalog Book
+  mediaType     MediaType
+  title         String
+  status        EntryStatus?
+  favorite      Boolean      @default(false)
+  progressLabel String? // freeform: "S2E4", "Page 210", "Level 12"
+  rating        Int? // 1-10
+  review        String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie? @relation(fields: [movieId], references: [id], onDelete: SetNull)
+  show  Show?  @relation(fields: [showId], references: [id], onDelete: SetNull)
+  game  Game?  @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  book  Book?  @relation(fields: [bookId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, movieId])
+  @@unique([userId, showId])
+  @@unique([userId, gameId])
+  @@unique([userId, bookId])
+  @@index([userId, mediaType])
+  @@map("entries")
+}
+
+model Movie {
+  id                  String    @id @default(cuid())
+  tmdbId              Int       @unique
+  title               String
+  originalTitle       String?
+  tagline             String?
+  overview            String?
+  posterPath          String?
+  backdropPath        String?
+  releaseDate         DateTime?
+  runtime             Int?
+  status              String?
+  originalLanguage    String?
+  budget              Float?
+  revenue             Float?
+  voteAverage         Float?
+  voteCount           Int?
+  popularity          Float?
+  genres              String? // comma-separated genre names
+  productionCompanies String? // comma-separated company names
+  spokenLanguages     String? // comma-separated language names
+  director            String?
+  writers             String? // comma-separated
+  cast                Json? // [{ name, character, profilePath }]
+  crew                Json? // [{ name, job, profilePath }] - key roles only
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  entries     Entry[]
+  listItems   ListItem[]
+  viewHistory ViewHistory[]
+
+  @@index([popularity])
+  @@map("movies")
+}
+
+model Show {
+  id               String    @id @default(cuid())
+  tmdbId           Int       @unique
+  name             String
+  overview         String?
+  posterPath       String?
+  backdropPath     String?
+  firstAirDate     DateTime?
+  status           String?
+  genres           String? // comma-separated
+  voteAverage      Float?
+  voteCount        Int?
+  popularity       Float?
+  numberOfSeasons  Int?
+  numberOfEpisodes Int?
+  cast             Json?
+  crew             Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  seasons     Season[]
+  entries     Entry[]
+  listItems   ListItem[]
+  viewHistory ViewHistory[]
+
+  @@index([popularity])
+  @@map("shows")
+}
+
+model Season {
+  id           String  @id @default(cuid())
+  showId       String
+  seasonNumber Int
+  name         String?
+  overview     String?
+  posterPath   String?
+  episodeCount Int?
+
+  show     Show      @relation(fields: [showId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+
+  @@unique([showId, seasonNumber])
+  @@map("seasons")
+}
+
+model Episode {
+  id            String    @id @default(cuid())
+  seasonId      String
+  showId        String
+  seasonNumber  Int
+  episodeNumber Int
+  name          String?
+  overview      String?
+  airDate       DateTime?
+  stillPath     String?
+  runtime       Int?
+
+  season   Season            @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  progress EpisodeProgress[]
+
+  @@unique([seasonId, episodeNumber])
+  @@index([showId])
+  @@map("episodes")
+}
+
+model EpisodeProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  episodeId String
+  watchedAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, episodeId])
+  @@map("episode_progress")
+}
+
+model Game {
+  id                      String    @id @default(cuid())
+  igdbId                  Int       @unique
+  name                    String
+  summary                 String?
+  storyline               String?
+  coverImageId            String? // IGDB image_id - build URL as https://images.igdb.com/igdb/image/upload/t_{size}/{id}.jpg
+  screenshots             Json? // [imageId, imageId, ...]
+  releaseDate             DateTime?
+  genres                  String? // comma-separated
+  platforms               String? // comma-separated
+  gameModes               String? // comma-separated, e.g. "Single player, Co-operative"
+  developer               String?
+  publisher               String?
+  rating                  Float? // IGDB aggregated critic rating, 0-100
+  ratingCount              Int?
+  popularity              Float?
+  timeToBeatMainMinutes   Int?
+  timeToBeatCompleteMinutes Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  entries     Entry[]
+  listItems   ListItem[]
+  viewHistory ViewHistory[]
+
+  @@index([popularity])
+  @@map("games")
+}
+
+model Book {
+  id               String   @id @default(cuid())
+  olid             String   @unique // Open Library work key, e.g. "OL12345W"
+  title            String
+  authors          String?
+  description      String?
+  coverId          Int? // Open Library cover id - https://covers.openlibrary.org/b/id/{id}-{S|M|L}.jpg
+  firstPublishYear Int?
+  subjects         String? // comma-separated
+  rating           Float? // Open Library average, 1-5
+  ratingCount      Int?
+  popularity       Float? // edition count, used as a popularity proxy
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  entries     Entry[]
+  listItems   ListItem[]
+  viewHistory ViewHistory[]
+
+  @@index([popularity])
+  @@map("books")
+}
+
+enum ListType {
+  FILM
+  SHOW
+  GAME
+  BOOK
+  MIX
+}
+
+model List {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  type      ListType @default(MIX)
+  createdAt DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ListItem[]
+
+  @@index([userId])
+  @@map("lists")
+}
+
+model ListItem {
+  id        String     @id @default(cuid())
+  listId    String
+  movieId   String?
+  showId    String?
+  gameId    String?
+  bookId    String?
+  title     String
+  mediaType MediaType?
+  note      String?
+  createdAt DateTime   @default(now())
+
+  list  List   @relation(fields: [listId], references: [id], onDelete: Cascade)
+  movie Movie? @relation(fields: [movieId], references: [id], onDelete: SetNull)
+  show  Show?  @relation(fields: [showId], references: [id], onDelete: SetNull)
+  game  Game?  @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  book  Book?  @relation(fields: [bookId], references: [id], onDelete: SetNull)
+
+  @@index([listId])
+  @@map("list_items")
+}
+
+model ViewHistory {
+  id       String   @id @default(cuid())
+  userId   String
+  path     String
+  title    String
+  kind     String? // e.g. "movie"/"show"/"game" - lets the UI pick behavior/icon later
+  movieId  String?
+  showId   String?
+  gameId   String?
+  bookId   String?
+  viewedAt DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie Movie? @relation(fields: [movieId], references: [id], onDelete: SetNull)
+  show  Show?  @relation(fields: [showId], references: [id], onDelete: SetNull)
+  game  Game?  @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  book  Book?  @relation(fields: [bookId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, path])
+  @@index([userId])
+  @@map("view_history")
+}
+
+// Remote-count bookmarks for the daily catalog sync: a type is only
+// re-fetched when its source reports more titles than last time.
+model SyncState {
+  key         String   @id // "movies" | "shows" | "games" | "books"
+  remoteCount Int
+  syncedAt    DateTime @updatedAt
+
+  @@map("sync_state")
+}
+
+// Small key/value store for catalog provenance, e.g. which Open Library data
+// dump the books came from ("books_dump_date" = "2026-09-01").
+model CatalogMeta {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("catalog_meta")
+}
