@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+*.db
+*.db-journal
+npm-debug.log*
+README.md
+.env.*
+!.env.example
+.github
+db-seed/openlibrary
