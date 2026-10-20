@@ -11,7 +11,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-type Status = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | null;
+type Status = "PLANNED" | "IN_PROGRESS" | "COMPLETED" | "DROPPED" | null;
 
 type ListSummary = {
   id: string;
